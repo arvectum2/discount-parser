@@ -50,7 +50,9 @@ def telegram_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 
 
 def test_telegram_pipeline_is_idempotent_and_parses_expiry(telegram_db, monkeypatch: pytest.MonkeyPatch) -> None:
-    html = '''<div class="tgme_channel_history"><div class="tgme_widget_message_wrap"><div class="tgme_widget_message" data-post="skidia/123"></div><div class="tgme_widget_message_text">Промокод TEST20 — скидка 20%. Работает до 31.08.2026.</div><a class="tgme_widget_message_date"><time datetime="2026-08-08T10:00:00Z"></time></a></div></div>'''
+    # Keep the fixture in the future so the test validates expiry parsing rather
+    # than becoming a calendar-dependent expired-offer test.
+    html = '''<div class="tgme_channel_history"><div class="tgme_widget_message_wrap"><div class="tgme_widget_message" data-post="skidia/123"></div><div class="tgme_widget_message_text">Промокод TEST20 — скидка 20%. Работает до 31.12.2099.</div><a class="tgme_widget_message_date"><time datetime="2026-08-08T10:00:00Z"></time></a></div></div>'''
     with create_session() as session:
         source = RegisteredSource(key="tg", name="tg", platform="telegram", source_type="discount_channel", url="https://t.me/skidia", collector_type="telegram_public", network_policy="auto", enabled=True, status="unknown", trust_level="community", priority=50, check_interval_minutes=120)
         session.add(source); session.commit(); source_id = source.id

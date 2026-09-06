@@ -5,7 +5,7 @@ from urllib.parse import urljoin
 
 from bs4 import BeautifulSoup, Tag
 
-from src.sources.adapters.common import closest_card, compact_text, external_id, image_url, parse_amount, parse_percent
+from src.sources.adapters.common import closest_card, compact_text, external_id, extract_revealed_promo_code, image_url, parse_amount, parse_percent
 from src.sources.base import RawOffer
 from src.sources.http import HttpClient
 
@@ -21,7 +21,23 @@ class PromokodiNetRuAdapter:
         self.client = client or HttpClient()
 
     def collect(self) -> list[RawOffer]:
-        return self.parse(self.client.get_text(self.base_url))
+        offers = self.parse(self.client.get_text(self.base_url))
+        page_cache: dict[str, str | None] = {}
+        for offer in offers:
+            if offer.promo_code or not offer.source_url or offer.source_url == self.base_url:
+                continue
+            if offer.source_url not in page_cache:
+                try:
+                    detail_html = self.client.get_text(offer.source_url)
+                    page_cache[offer.source_url] = extract_revealed_promo_code(detail_html)
+                except Exception:
+                    page_cache[offer.source_url] = None
+            offer.promo_code = page_cache[offer.source_url]
+            payload = dict(offer.raw_payload or {})
+            payload["detail_followed"] = True
+            payload["reveal_status"] = "success" if offer.promo_code else "not_found"
+            offer.raw_payload = payload
+        return offers
 
     def parse(self, html: str) -> list[RawOffer]:
         soup = BeautifulSoup(html, "html.parser")

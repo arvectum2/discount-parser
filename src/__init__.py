@@ -29,3 +29,11 @@ install_profile_image_extraction()
 from src.customer_feedback_17 import install_customer_feedback_17
 
 install_customer_feedback_17()
+
+# DP-CUST-020 is imported only after the earlier compatibility layers have been
+# installed. It deliberately wraps the final Promokood parser/runtime methods so
+# the five customer sources use their dedicated adapters as production decoders
+# and Promokood related-offer navigation cards cannot re-enter the review queue.
+from src.customer_feedback_20 import install_customer_feedback_20
+
+install_customer_feedback_20()
