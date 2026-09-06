@@ -6,7 +6,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from src.customer_feedback_20 import _is_stale_promokood_review_artifact
+from src.customer_feedback_20 import (
+    _is_stale_promokood_review_artifact,
+    _promokood_runtime_business_records,
+)
 from src.modules.offers.models import Offer, OfferSourceObservation
 from src.sources.adapters.promokood import PromokoodAdapter
 from src.sources.base import RawOffer
@@ -56,7 +59,7 @@ def test_promokood_detail_page_fans_out_real_codes_and_ignores_related_cards() -
     assert all("Открыть" not in (offer.description or "") for offer in offers)
 
 
-def test_promokood_root_navigation_cards_are_discovery_only() -> None:
+def test_promokood_root_navigation_cards_are_discovery_only_in_production() -> None:
     html = """
     <main>
       <a href="/o/level-travel">Level.Travel Отели туры / отели Скидка 4000 ₽ Открыть</a>
@@ -65,8 +68,15 @@ def test_promokood_root_navigation_cards_are_discovery_only() -> None:
     </main>
     """
 
-    offers = PromokoodAdapter("https://promokood.ru/").parse(html)
+    # Preserve the historical adapter parse contract for corpus/parity tooling,
+    # but remove catalogue cards at the production-runtime boundary.
+    parsed = PromokoodAdapter("https://promokood.ru/").parse(html)
+    offers = _promokood_runtime_business_records(
+        parsed,
+        page_url="https://promokood.ru/",
+    )
 
+    assert len(parsed) == 3
     assert offers == []
 
 
