@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import re
 from decimal import Decimal
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 
 from bs4 import BeautifulSoup, Tag
 
@@ -17,6 +17,11 @@ _OFFER_WORD_RE = re.compile(r"скидк|промокод|кэшб|кешб|бо
 _BENEFIT_START_RE = re.compile(r"\b(?:доп\.?\s*)?(?:скидк\w*|бонус|кэшб\w*|кешб\w*|бесплатно)\b", re.IGNORECASE)
 _ACTION_SUFFIX_RE = re.compile(r"\s+(?:активировать|получить|применить|использовать)\s+промокод.*$", re.IGNORECASE)
 _CODE_RE = re.compile(r"(?:промокод|код)\s*[:\-–—]?\s*([A-ZА-ЯЁ0-9][A-ZА-ЯЁ0-9_-]{3,24})", re.IGNORECASE)
+_DETAIL_CODE_RE = re.compile(r"^[A-Za-zА-Яа-яЁё0-9][A-Za-zА-Яа-яЁё0-9_-]{1,39}$")
+_DETAIL_DESCRIPTOR_RE = re.compile(r"^промокод\b", re.IGNORECASE)
+_DETAIL_DATE_RE = re.compile(r"^(?:до\s+)?\d{1,2}\.\d{1,2}\.\d{4}$", re.IGNORECASE)
+_DETAIL_STOP_RE = re.compile(r"^(?:о сервисе|ключев\w+ преимуществ\w*|mcc-коды|похожие предложения|реклама\.)", re.IGNORECASE)
+_DETAIL_CTA_RE = re.compile(r"^(?:активировать|получить|применить|использовать)\s+промокод$", re.IGNORECASE)
 
 
 class PromokoodAdapter:
@@ -31,6 +36,17 @@ class PromokoodAdapter:
 
     def parse(self, html: str) -> list[RawOffer]:
         soup = BeautifulSoup(html, "html.parser")
+
+        # Promokood merchant pages are authoritative 1:N containers: a single
+        # /o/<merchant> page contains several independent promo codes followed
+        # by their benefit, conditions and validity. Parse those records before
+        # the historical CTA/card fallback so a whole page can never collapse
+        # into one code-less review row.
+        if self._is_detail_page():
+            detail_offers = self._parse_detail_codes(soup)
+            if detail_offers:
+                return detail_offers
+
         offers: list[RawOffer] = []
         seen: set[str] = set()
 
@@ -76,6 +92,96 @@ class PromokoodAdapter:
                 )
             )
         return offers
+
+    def _is_detail_page(self) -> bool:
+        parsed = urlparse(self.base_url)
+        host = (parsed.hostname or "").casefold().removeprefix("www.")
+        return host == "promokood.ru" and parsed.path.casefold().startswith("/o/")
+
+    def _parse_detail_codes(self, soup: BeautifulSoup) -> list[RawOffer]:
+        strings = [re.sub(r"\s+", " ", value).strip() for value in soup.stripped_strings]
+        strings = [value for value in strings if value]
+        merchant = self._detail_merchant(soup, strings)
+        offers: list[RawOffer] = []
+        seen: set[str] = set()
+
+        for index in range(len(strings) - 1):
+            code = strings[index].strip()
+            descriptor = strings[index + 1].strip()
+            if not self._looks_like_detail_code(code, descriptor):
+                continue
+
+            parts = [descriptor]
+            cursor = index + 2
+            while cursor < len(strings):
+                value = strings[cursor].strip()
+                if _DETAIL_STOP_RE.search(value):
+                    break
+                if cursor + 1 < len(strings) and self._looks_like_detail_code(value, strings[cursor + 1]):
+                    break
+                if _DETAIL_CTA_RE.match(value):
+                    break
+                parts.append(value)
+                if _DETAIL_DATE_RE.match(value):
+                    break
+                cursor += 1
+
+            record_text = " ".join(parts).strip()
+            if not record_text:
+                continue
+            title = self._detail_title(parts)
+            ext_id = hashlib.sha256(f"{self.base_url}|{merchant or ''}|{code}|{record_text}".encode("utf-8")).hexdigest()[:32]
+            if ext_id in seen:
+                continue
+            seen.add(ext_id)
+
+            percent = self._discount_percent(record_text)
+            amount = self._discount_amount(record_text) if percent is None else None
+            offers.append(
+                RawOffer(
+                    source_key=self.key,
+                    external_id=ext_id,
+                    title=title,
+                    source_url=self.base_url,
+                    merchant=merchant,
+                    description=record_text[:2000],
+                    conditions=record_text[:2000],
+                    promo_code=code,
+                    discount_percent=percent,
+                    discount_amount=amount,
+                    valid_until=extract_valid_until(record_text),
+                    raw_payload={
+                        "text": record_text,
+                        "promo_code": code,
+                        "record_kind": "promokood_detail_promo",
+                    },
+                )
+            )
+        return offers
+
+    def _looks_like_detail_code(self, code: str, descriptor: str) -> bool:
+        if not _DETAIL_CODE_RE.fullmatch(code):
+            return False
+        if _DETAIL_CTA_RE.match(code):
+            return False
+        return bool(_DETAIL_DESCRIPTOR_RE.match(descriptor))
+
+    def _detail_merchant(self, soup: BeautifulSoup, strings: list[str]) -> str | None:
+        for node in soup.find_all(["h1", "h2", "h3"]):
+            value = re.sub(r"\s+", " ", node.get_text(" ", strip=True)).strip()
+            if value and len(value) <= 120 and not _OFFER_WORD_RE.fullmatch(value):
+                return value
+        for value in strings[:8]:
+            if value and len(value) <= 120 and not _DETAIL_CTA_RE.match(value) and not _DETAIL_DESCRIPTOR_RE.match(value):
+                return value
+        return None
+
+    def _detail_title(self, parts: list[str]) -> str:
+        descriptor = parts[0] if parts else "Промокод"
+        title = re.sub(r"^промокод\s+на\s+", "", descriptor, flags=re.IGNORECASE).strip(" :-—")
+        if len(parts) > 1 and not _DETAIL_DATE_RE.match(parts[1]) and parts[1].lower().startswith(("на ", "для ", "при ")):
+            title = f"{title} {parts[1]}".strip()
+        return (title[:300] or "Промокод")
 
     def _find_card(self, action: Tag) -> Tag:
         action_text = re.sub(r"\s+", " ", action.get_text(" ", strip=True)).strip()
