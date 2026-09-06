@@ -25,7 +25,7 @@ _PATCHED = False
 # The customer product ships dedicated adapters for these sources. DP Engine is
 # still responsible for crawling/target-page discovery, but the source adapter is
 # the production decoder. A persisted generic-primary experiment must never
-# bypass a site adapter in the customer path.
+# bypass a site adapter in the customer path used by src.sources.runner.
 _SOURCE_ADAPTER_KEYS = frozenset(
     {
         "promokood",
@@ -41,7 +41,6 @@ _NAVIGATION_CTA_RE = re.compile(
     re.IGNORECASE,
 )
 
-_ORIGINAL_PRODUCTION_DECODE = ProductionSourceRuntime._decode_selected
 _ORIGINAL_OBSERVED_DECODE = ObservedProductionSourceRuntime._decode_selected
 _ORIGINAL_PROMOKOOD_PARSE = PromokoodAdapter.parse
 _ORIGINAL_RUN_SOURCE = _sources_runner.run_source
@@ -60,20 +59,18 @@ def _is_promokood_detail_url(value: str) -> bool:
 
 
 def _promokood_parse_v20(self: PromokoodAdapter, html: str) -> list[RawOffer]:
-    """Keep business records and discard internal navigation cards.
+    """On merchant detail pages, discard related-navigation pseudo-offers.
 
-    Promokood merchant pages contain the actual N promo-code records followed by
-    "Похожие предложения". The latter are links to other /o/... pages and must
-    be discovery targets, not offers. The same rule also removes code-less
-    overview cards from the home page while preserving real structured discount
-    rows and all promo-code records returned by the DP-CUST-014 block parser.
+    The adapter's historical root/category parse contract is intentionally left
+    intact for regression/parity tooling. Production filtering of overview cards
+    happens later in the observed runtime, where page context is authoritative.
     """
 
     parsed = list(_ORIGINAL_PROMOKOOD_PARSE(self, html))
     page_url = _normalized_url(self.base_url)
-    page_path = urlparse(page_url).path.rstrip("/") or "/"
-    page_is_root = page_path == "/"
     page_is_detail = _is_promokood_detail_url(page_url)
+    if not page_is_detail:
+        return parsed
 
     result: list[RawOffer] = []
     for offer in parsed:
@@ -86,19 +83,54 @@ def _promokood_parse_v20(self: PromokoodAdapter, html: str) -> list[RawOffer]:
             part for part in (offer.title, offer.description, offer.conditions) if part
         ).strip()
 
-        # A code-less card pointing to another Promokood merchant page is only a
-        # crawler/discovery link. This catches category-page duplicate cards.
+        # A code-less card pointing to another Promokood merchant page is the
+        # "Похожие предложения" navigation block, not a business record.
         if _is_promokood_detail_url(offer_url) and offer_url != page_url:
             continue
 
-        # The root page is an overview. Its code-less cards ("... Открыть") are
-        # not final business records; the runtime follows discovered /o/ pages.
-        if page_is_root:
+        # Defensive fallback for related cards whose href was not retained by an
+        # older parser layer.
+        if _NAVIGATION_CTA_RE.search(text):
             continue
 
-        # On a merchant detail page, a code-less CTA ending in Открыть/Подробнее
-        # belongs to "Похожие предложения" (or is an incomplete promo parse).
-        if page_is_detail and _NAVIGATION_CTA_RE.search(text):
+        result.append(offer)
+
+    return result
+
+
+def _promokood_runtime_business_records(
+    decoded: list[RawOffer],
+    *,
+    page_url: str,
+) -> list[RawOffer]:
+    """Filter Promokood discovery/navigation rows only in production runtime."""
+
+    normalized_page = _normalized_url(page_url)
+    page_path = urlparse(normalized_page).path.rstrip("/") or "/"
+    page_is_root = page_path == "/"
+    result: list[RawOffer] = []
+
+    for offer in decoded:
+        if offer.promo_code:
+            result.append(offer)
+            continue
+
+        offer_url = _normalized_url(offer.source_url or normalized_page)
+        text = " ".join(
+            part for part in (offer.title, offer.description, offer.conditions) if part
+        ).strip()
+
+        # Root cards are catalogue/discovery entries. They point to the page that
+        # actually owns the promo codes and must not enter customer review.
+        if page_is_root and _is_promokood_detail_url(offer_url):
+            continue
+
+        # Category/detail pages can also contain internal cross-links to another
+        # merchant. Those links are crawl targets, never final offers.
+        if _is_promokood_detail_url(offer_url) and offer_url != normalized_page:
+            continue
+
+        if _is_promokood_detail_url(normalized_page) and _NAVIGATION_CTA_RE.search(text):
             continue
 
         result.append(offer)
@@ -145,6 +177,11 @@ def _decode_source_adapter_authoritative(
                 continue
 
             decoded = list(parser(html))
+            if self.config.key == "promokood":
+                decoded = _promokood_runtime_business_records(
+                    decoded,
+                    page_url=effective_url,
+                )
             decoded_pages += 1
             adapter_pages += 1
             assessment = by_url.get(page_url)
@@ -169,16 +206,6 @@ def _decode_source_adapter_authoritative(
     # Tuple contract: offers, decoded_pages, warnings, generic_pages,
     # legacy/adapter_pages, parity_failures.
     return offers, decoded_pages, warnings, 0, adapter_pages, 0
-
-
-def _production_decode_v20(
-    self: ProductionSourceRuntime,
-    selected: tuple[str, ...],
-    assessments: tuple[TargetPageAssessment, ...],
-):
-    if self.config.key in _SOURCE_ADAPTER_KEYS:
-        return _decode_source_adapter_authoritative(self, selected, assessments)
-    return _ORIGINAL_PRODUCTION_DECODE(self, selected, assessments)
 
 
 def _observed_decode_v20(
@@ -293,7 +320,9 @@ def install_customer_feedback_20() -> None:
     if _PATCHED:
         return
 
-    ProductionSourceRuntime._decode_selected = _production_decode_v20
+    # Production collection goes through ObservedProductionSourceRuntime. Keep
+    # the base ProductionSourceRuntime untouched so DP Engine parity/regression
+    # tooling can still evaluate the generic decoder independently.
     ObservedProductionSourceRuntime._decode_selected = _observed_decode_v20
     PromokoodAdapter.parse = _promokood_parse_v20
     _sources_runner.run_source = _run_source_v20
