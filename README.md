@@ -4,6 +4,8 @@
 
 ## Статус
 
+**Архитектура:** универсальное ядро `arvectum_data` вынесено в отдельный canonical-репозиторий `arvectum2/data-platform`; Discount Parser теперь потребляет пакет `arvectum-data` с зафиксированного Git commit. Продуктовые адаптеры, parity-контроль и бизнес-логика остаются в этом репозитории.
+
 **MVP v1.0 — R1–R8 DONE; R9 code/distribution implementation complete.**
 
 Клиентский installer/web UI и cross-platform QA/delivery workflows реализованы. Финальный GitHub Actions execution сейчас блокируется до первого workflow step на уровне runner/account environment, поэтому `CI green` не заявляется. Live acceptance требует целевой машины, реального доступа к источникам и Telegram credentials.
