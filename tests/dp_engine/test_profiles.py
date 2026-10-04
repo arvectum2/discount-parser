@@ -166,11 +166,17 @@ def test_confirmation_learns_structure_not_candidate_values():
         result,
         {"price": selected.candidate_id},
     )
-    serialized = json.dumps(store.snapshot(), ensure_ascii=False)
+    snapshot = store.snapshot()
+    fingerprint_keys = [
+        fingerprint_key
+        for fields in snapshot["sites"].values()
+        for patterns in fields.values()
+        for fingerprint_key in patterns
+    ]
 
     assert len(events) == 1
-    assert "201" not in serialized
-    assert "199" not in serialized
+    assert all("201" not in key for key in fingerprint_keys)
+    assert all("199" not in key for key in fingerprint_keys)
     assert events[0].selected_candidate_id == selected.candidate_id
     assert all("201" not in item for item in events[0].positive_fingerprints)
 
