@@ -1,0 +1,25 @@
+name: Source section review
+on:
+  pull_request:
+    paths:
+      - 'specs/001-contained-product-traceability/**'
+      - 'docs/ROADMAP.md'
+      - 'docs/HARDENING_ROADMAP_2026-08-17.md'
+      - 'docs/FINAL_ACCEPTANCE_CHECKLIST.md'
+      - 'docs/TECHNICAL_SPEC_V1.md'
+      - '.github/workflows/source-section-review.yml'
+permissions:
+  contents: read
+jobs:
+  source-section-review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python specs/001-contained-product-traceability/checks/check_section_review.py
+      - run: python -m unittest discover -s specs/001-contained-product-traceability/checks -p test_section_review.py
