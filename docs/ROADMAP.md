@@ -492,3 +492,7 @@ README должен содержать:
 # Текущий следующий шаг
 
 После фиксации R0 реализация начинается с **R1 — Project foundation**. До R3 не подключаем пачку внешних сайтов: сначала создаём устойчивый каркас и persistence, затем доказываем один полный vertical slice и только после этого масштабируем число adapters.
+
+## Spec Kit — candidate linkage (2026-11-20)
+
+[Specification](../specs/001-contained-product-traceability/spec.md) · [Plan](../specs/001-contained-product-traceability/plan.md) · [Integration tasks](../specs/001-contained-product-traceability/tasks.md). Existing native source authority, scope, status and approval boundaries remain unchanged.
