@@ -14,7 +14,7 @@ def test_windows_build_closure_includes_pinned_data_platform():
     assert dependency in lock
     for package in ("fastapi", "pydantic-settings", "uvicorn", "setuptools", "wheel"):
         assert re.search(rf"(?mi)^{re.escape(package)}==[^\s]+$", lock)
-    for file, count in (("build-delivery.yml", 2), ("windows-reproducibility.yml", 1)):
+    for file, count in (("build-delivery.yml", 2), ("windows-reproducibility.yml", 1), ("windows-installed-acceptance.yml", 1)):
         workflow = (ROOT / ".github/workflows" / file).read_text()
         install = "python -m pip install --no-deps --only-binary=:all: -r requirements/windows-build.lock"
         pinned = f"python -m pip install --no-deps --no-build-isolation '{dependency}'"
