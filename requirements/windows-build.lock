@@ -2,6 +2,8 @@
 # Generated from the last known-good Windows CI resolution and then frozen.
 # Installation must use --no-deps followed by `pip check` so no unrecorded
 # dependency resolution can enter the reproducible build.
+# Direct source dependency pinned in pyproject.toml and installed without deps/build isolation
+# at every Windows closure install: arvectum-data @ git+https://github.com/arvectum2/data-platform.git@a591256f50a21b8618639129eccb15eb214204d5. Its three declared dependencies are already locked.
 
 aiofiles==25.1.0
 aiogram==3.30.0

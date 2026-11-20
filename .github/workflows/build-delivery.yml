@@ -62,6 +62,7 @@ jobs:
           $manifest = Get-Content packaging/windows/build-manifest.json -Raw | ConvertFrom-Json
           python -m pip install --upgrade "pip==$($manifest.pip_version)"
           python -m pip install --no-deps --only-binary=:all: -r requirements/windows-build.lock
+          python -m pip install --no-deps --no-build-isolation 'arvectum-data @ git+https://github.com/arvectum2/data-platform.git@a591256f50a21b8618639129eccb15eb214204d5'
           python -m pip install --no-deps --no-build-isolation -e .
           python -m pip check
 
@@ -233,6 +234,7 @@ jobs:
           "SOURCE_DATE_EPOCH=$epoch" >> $env:GITHUB_ENV
           python -m pip install --upgrade "pip==${{ steps.manifest.outputs.pip_version }}"
           python -m pip install --no-deps --only-binary=:all: -r requirements/windows-build.lock
+          python -m pip install --no-deps --no-build-isolation 'arvectum-data @ git+https://github.com/arvectum2/data-platform.git@a591256f50a21b8618639129eccb15eb214204d5'
           python -m pip install --no-deps --no-build-isolation -e .
           python -m pip check
           ./scripts/ensure_inno_setup.ps1 -Version "${{ steps.manifest.outputs.inno_version }}"

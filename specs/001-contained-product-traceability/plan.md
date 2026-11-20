@@ -1,0 +1,3 @@
+# Plan
+
+Pin exact source versions and all original content anchors, including tables and unmarked lines. Reuse existing IDs; reconcile historical versus active. Map each applicable original criterion to native task, test and exact evidence; preserve gaps, dependencies, blockers and decisions. Company PORT-002: former client disengaged, no current acceptance path; no further material build before portfolio reassessment. Technical roadmap does not override business hold or contract/IP rights. Close integration only after source conservation and applicable review. No production action or new authority.

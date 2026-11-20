@@ -82,6 +82,7 @@ jobs:
         run: |
           python -m pip install --upgrade "pip==${{ steps.manifest.outputs.pip_version }}"
           python -m pip install --no-deps --only-binary=:all: -r requirements/windows-build.lock
+          python -m pip install --no-deps --no-build-isolation 'arvectum-data @ git+https://github.com/arvectum2/data-platform.git@a591256f50a21b8618639129eccb15eb214204d5'
           python -m pip install --no-deps --no-build-isolation -e .
           python -m pip check
 
